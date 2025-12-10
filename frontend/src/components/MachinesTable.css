@@ -124,6 +124,35 @@
   background: #dbeafe !important;
 }
 
+/* Download Row (appears below selected machine) */
+.download-row {
+  background: linear-gradient(135deg, #eff6ff, #f0fdf4) !important;
+  border-left: 3px solid #6366f1;
+}
+
+.download-row td {
+  padding: 12px 20px !important;
+}
+
+.download-row-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.download-row .selected-machine-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6366f1;
+  font-size: 0.875rem;
+}
+
+.download-row .selected-machine-info svg {
+  color: #6366f1;
+}
+
 /* Clickable rows */
 .machines-table tbody tr {
   cursor: pointer;

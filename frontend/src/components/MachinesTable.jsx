@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Eye, Wifi, WifiOff, Loader2, AlertTriangle, Database, FileText, Download } from 'lucide-react';
 import ReportGenerator from './ReportGenerator';
 import './MachinesTable.css';
@@ -34,7 +34,7 @@ const TypeBadge = ({ type }) => {
   );
 };
 
-const MachinesTable = ({ data = [], filters, loading = false, error = null }) => {
+const MachinesTable = ({ data = [], filters, loading = false, error = null, onMachineClick }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedMachine, setSelectedMachine] = useState(null);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -56,6 +56,33 @@ const MachinesTable = ({ data = [], filters, loading = false, error = null }) =>
       if (filters.customerId && filters.customerId !== 'All' && machine.customerId !== filters.customerId) return false;
       if (filters.fromDate && machine.date && machine.date < filters.fromDate) return false;
       if (filters.toDate && machine.date && machine.date > filters.toDate) return false;
+      
+      // Search filter - search by selected field
+      if (filters.searchQuery && filters.searchQuery.trim() !== '') {
+        const query = filters.searchQuery.toLowerCase().trim();
+        const searchField = filters.searchField || 'machineName';
+        
+        let fieldValue = '';
+        switch (searchField) {
+          case 'machineName':
+            fieldValue = (machine.machineName || '').toLowerCase();
+            break;
+          case 'machineId':
+            fieldValue = (machine.machineId || '').toLowerCase();
+            break;
+          case 'customerId':
+            fieldValue = (machine.customerId || '').toLowerCase();
+            break;
+          case 'areaId':
+            fieldValue = (machine.areaId || '').toLowerCase();
+            break;
+          default:
+            fieldValue = (machine.machineName || '').toLowerCase();
+        }
+        
+        if (!fieldValue.includes(query)) return false;
+      }
+      
       return true;
     });
   }, [data, filters]);
@@ -204,24 +231,6 @@ ${selectedMachine.status === 'unacceptable' ? '• IMMEDIATE inspection required
             Showing {startIndex + 1}-{Math.min(endIndex, filteredData.length)} of {filteredData.length} machines
           </span>
         </div>
-        <div className="report-actions">
-          {selectedMachine ? (
-            <div className="selected-machine-info">
-              <FileText size={16} />
-              <span>Selected: <strong>{selectedMachine.machineName}</strong></span>
-            </div>
-          ) : (
-            <div className="selected-machine-info no-selection">
-              <FileText size={16} />
-              <span>Select a machine to download report</span>
-            </div>
-          )}
-          <ReportGenerator 
-            machine={selectedMachine}
-            onGenerateStart={() => setGeneratingReport(true)}
-            onGenerateEnd={() => setGeneratingReport(false)}
-          />
-        </div>
       </div>
 
       <div className="table-wrapper">
@@ -243,8 +252,8 @@ ${selectedMachine.status === 'unacceptable' ? '• IMMEDIATE inspection required
           <tbody>
             {currentData.length > 0 ? (
               currentData.map((machine, index) => (
+                <React.Fragment key={machine.id}>
                 <tr 
-                  key={machine.id} 
                   className={`${index % 2 === 0 ? 'row-even' : 'row-odd'} ${selectedMachine?.id === machine.id ? 'row-selected' : ''}`}
                   onClick={() => handleMachineSelect(machine)}
                 >
@@ -266,11 +275,39 @@ ${selectedMachine.status === 'unacceptable' ? '• IMMEDIATE inspection required
                   <td>{machine.subareaId}</td>
                   <td className="cell-date">{formatDate(machine.date)}</td>
                   <td>
-                    <button className="action-btn" title="View Details">
+                    <button 
+                      className="action-btn" 
+                      title="View Details"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onMachineClick) {
+                          onMachineClick(machine);
+                        }
+                      }}
+                    >
                       <Eye size={16} />
                     </button>
                   </td>
                 </tr>
+                {/* Download Report row - appears below selected machine */}
+                {selectedMachine?.id === machine.id && (
+                  <tr className="download-row">
+                    <td colSpan="10">
+                      <div className="download-row-content">
+                        <div className="selected-machine-info">
+                          <FileText size={16} />
+                          <span>Selected: <strong>{selectedMachine.machineName}</strong></span>
+                        </div>
+                        <ReportGenerator 
+                          machine={selectedMachine}
+                          onGenerateStart={() => setGeneratingReport(true)}
+                          onGenerateEnd={() => setGeneratingReport(false)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
               ))
             ) : (
               <tr>

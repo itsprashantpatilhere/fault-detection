@@ -1,0 +1,247 @@
+.fft-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
+  backdrop-filter: blur(4px);
+}
+
+.fft-modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fft-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+}
+
+.fft-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fft-modal-title h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.fft-modal-title p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.fft-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fft-close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg);
+}
+
+.fft-modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  max-height: calc(90vh - 80px);
+}
+
+/* Axis Selector */
+.axis-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 1rem;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 10px;
+  width: fit-content;
+}
+
+.axis-btn {
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.axis-btn:hover {
+  color: #1e293b;
+}
+
+.axis-btn.active {
+  background: white;
+  color: #6366f1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Chart Area */
+.fft-chart-area {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  min-height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fft-canvas {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.fft-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: #64748b;
+}
+
+.fft-loading svg {
+  color: #6366f1;
+}
+
+/* Legend */
+.fft-legend {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 10px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.legend-color {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.legend-color.h-axis {
+  background: #3b82f6;
+}
+
+.legend-color.v-axis {
+  background: #10b981;
+}
+
+.legend-color.a-axis {
+  background: #f59e0b;
+}
+
+/* Info */
+.fft-info {
+  display: flex;
+  gap: 2rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.info-item {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.info-item .info-label {
+  color: #94a3b8;
+}
+
+.info-item .info-value {
+  color: #334155;
+  font-weight: 500;
+}
+
+/* Spinning animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .fft-modal-overlay {
+    padding: 1rem;
+  }
+
+  .fft-modal-content {
+    max-height: 95vh;
+  }
+
+  .fft-legend {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .fft-info {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}

@@ -6,6 +6,7 @@ import KpiCardsRow from './components/KpiCardsRow';
 import ChartsSection from './components/ChartsSection';
 import MachineFilterBar from './components/MachineFilterBar';
 import MachinesTable from './components/MachinesTable';
+import MachineDetail from './components/MachineDetail';
 import {
   defaultKpiData,
   defaultCustomerTrendData,
@@ -28,6 +29,7 @@ import './App.css';
 function App() {
   // Active page state (simple routing without React Router)
   const [activePage, setActivePage] = useState('dashboard');
+  const [selectedMachine, setSelectedMachine] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   
   // Loading states
@@ -70,7 +72,9 @@ function App() {
     status: 'All',
     customerId: 'All',
     fromDate: weekAgo,
-    toDate: today
+    toDate: today,
+    searchField: 'machineName',
+    searchQuery: ''
   });
 
   // Dashboard date filters
@@ -233,8 +237,8 @@ function App() {
     
     performAutoSync();
     
-    // Also set up periodic sync check every 5 minutes
-    const syncInterval = setInterval(performAutoSync, 5 * 60 * 1000);
+    // Also set up periodic sync check every 2 minutes
+    const syncInterval = setInterval(performAutoSync, 2 * 60 * 1000);
     
     return () => clearInterval(syncInterval);
   }, []);
@@ -262,13 +266,16 @@ function App() {
   // Handle machine filter changes
   const handleMachineFilterApply = (filters) => {
     console.log('handleMachineFilterApply called with:', filters);
-    // Ensure 'All' values are passed correctly
+    // Ensure 'All' values are passed correctly and include search params
     const cleanFilters = {
       areaId: filters.areaId || 'All',
       status: filters.status || 'All',
       customerId: filters.customerId || 'All',
       fromDate: filters.fromDate,
-      toDate: filters.toDate
+      toDate: filters.toDate,
+      // Include search parameters
+      searchField: filters.searchField || 'machineName',
+      searchQuery: filters.searchQuery || ''
     };
     console.log('Setting machine filters:', cleanFilters);
     setMachineFilters(cleanFilters);
@@ -291,13 +298,20 @@ function App() {
       toDate: date
     };
     setMachineFilters(newFilters);
-    // Navigate to machines page
+    // Reset selected machine and navigate to machines page
+    setSelectedMachine(null);
     setActivePage('machines');
+  };
+
+  // Handle page change - reset selected machine
+  const handlePageChange = (page) => {
+    setSelectedMachine(null);
+    setActivePage(page);
   };
 
   return (
     <div className="app">
-      <Header activePage={activePage} onPageChange={setActivePage} />
+      <Header activePage={activePage} onPageChange={handlePageChange} />
       
       {activePage === 'dashboard' && (
         <PageContainer 
@@ -331,7 +345,7 @@ function App() {
         </PageContainer>
       )}
 
-      {activePage === 'machines' && (
+      {activePage === 'machines' && !selectedMachine && (
         <PageContainer 
           title="Machine Inventory" 
           subtitle="View and manage all factory machines"
@@ -348,6 +362,20 @@ function App() {
             filters={machineFilters}
             loading={loading.machines}
             error={errors.machines}
+            onMachineClick={(machine) => setSelectedMachine(machine)}
+          />
+        </PageContainer>
+      )}
+
+      {activePage === 'machines' && selectedMachine && (
+        <PageContainer 
+          title="Machine Details" 
+          subtitle="Detailed machine information and bearing data"
+        >
+          <MachineDetail 
+            machineId={selectedMachine.machineId || selectedMachine.id}
+            machineInfo={selectedMachine}
+            onBack={() => setSelectedMachine(null)}
           />
         </PageContainer>
       )}
