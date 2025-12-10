@@ -2,15 +2,42 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from contextlib import asynccontextmanager
 import time
 
 # Support both absolute and relative imports
 try:
-    from app.routers import machines, stats
+    from app.routers import machines, stats, sync
+    from app.database import connect_to_database, close_database_connection
 except ImportError:
-    from routers import machines, stats
+    from routers import machines, stats, sync
+    from database import connect_to_database, close_database_connection
 
-app = FastAPI(title="Machine Monitoring API")
+
+# ------------------- Lifespan Handler (Database Connection) -------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Handle startup and shutdown events.
+    - Connect to MongoDB on startup
+    - Close connection on shutdown
+    """
+    # Startup
+    print("🚀 Starting up...")
+    try:
+        await connect_to_database()
+    except Exception as e:
+        print(f"⚠️ MongoDB connection failed: {e}")
+        print("⚠️ App will run but database features won't work")
+    
+    yield  # App runs here
+    
+    # Shutdown
+    print("🛑 Shutting down...")
+    await close_database_connection()
+
+
+app = FastAPI(title="Machine Monitoring API", lifespan=lifespan)
 
 # ------------------- Request Logging Middleware -------------------
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -57,6 +84,7 @@ app.add_middleware(
 # Prefix is empty because machines.py already handles `/machines` in the route
 app.include_router(machines.router, prefix="", tags=["Machines"])
 app.include_router(stats.router, prefix="/stats", tags=["Stats"])
+app.include_router(sync.router, prefix="/sync", tags=["Sync"])
 
 # ------------------- Home Endpoint -------------------
 @app.get("/")

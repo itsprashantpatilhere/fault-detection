@@ -5,19 +5,42 @@ from datetime import datetime, timedelta
 from typing import List
 import itertools
 
+# Support both absolute and relative imports
+try:
+    from app.database import get_database
+except ImportError:
+    try:
+        from database import get_database
+    except ImportError:
+        def get_database():
+            return None
+
 router = APIRouter()
+
+
+def get_db():
+    """Get database, returns None if not available"""
+    try:
+        return get_database()
+    except Exception:
+        return None
+
 
 # PIE CHART
 @router.get("/pie")
 async def pie_chart(date: str = Query(...), customerId: str = Query(None)):
     """Count machines per customer for a given day"""
+    db = get_db()
+    if db is None:
+        return {"data": [], "error": "Database not connected"}
+    
     match = {"date": date}
     if customerId:
         match["customerId"] = customerId
 
     pipeline = [
         {"$match": match},
-        {"$group": {"_id": "$customer", "count": {"$sum": 1}}}
+        {"$group": {"_id": "$customerId", "count": {"$sum": 1}}}
     ]
     result = await db.machines.aggregate(pipeline).to_list(None)
     return {"data": result}
@@ -32,6 +55,10 @@ async def stacked_chart(
     customerId: str = Query(None),
 ):
     """Return machine status counts for stacked bar chart"""
+    db = get_db()
+    if db is None:
+        return {"dates": [], "statuses": {}, "error": "Database not connected"}
+    
     start = datetime.strptime(date_from, "%Y-%m-%d")
     end = datetime.strptime(date_to, "%Y-%m-%d")
 

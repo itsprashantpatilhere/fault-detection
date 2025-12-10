@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Eye, Wifi, WifiOff, Loader2, AlertTriangle, Database, FileText, Download } from 'lucide-react';
+import ReportGenerator from './ReportGenerator';
 import './MachinesTable.css';
 
 const ROWS_PER_PAGE = 10;
@@ -9,10 +10,12 @@ const StatusBadge = ({ status }) => {
     normal: { label: 'Normal', className: 'badge-normal' },
     satisfactory: { label: 'Satisfactory', className: 'badge-satisfactory' },
     alert: { label: 'Alert', className: 'badge-alert' },
-    unacceptable: { label: 'Unacceptable', className: 'badge-unacceptable' }
+    unacceptable: { label: 'Unsatisfactory', className: 'badge-unacceptable' },
+    unsatisfactory: { label: 'Unsatisfactory', className: 'badge-unacceptable' }
   };
 
-  const config = statusConfig[status] || statusConfig.normal;
+  const normalizedStatus = (status || 'normal').toLowerCase();
+  const config = statusConfig[normalizedStatus] || statusConfig.normal;
 
   return (
     <span className={`status-badge ${config.className}`}>
@@ -36,14 +39,23 @@ const MachinesTable = ({ data = [], filters, loading = false, error = null }) =>
   const [selectedMachine, setSelectedMachine] = useState(null);
   const [generatingReport, setGeneratingReport] = useState(false);
 
-  // Filter data based on filters
+  // Data is already filtered by API, but we do client-side filtering as backup
+  // Note: API already filters, so this is mainly for local UI consistency
   const filteredData = useMemo(() => {
     return data.filter(machine => {
-      if (filters.areaId !== 'All' && machine.areaId !== filters.areaId) return false;
-      if (filters.status !== 'All' && machine.status !== filters.status) return false;
-      if (filters.customerId !== 'All' && machine.customerId !== filters.customerId) return false;
-      if (filters.fromDate && machine.date < filters.fromDate) return false;
-      if (filters.toDate && machine.date > filters.toDate) return false;
+      // Compare using lowercase for status (API returns Normal, data stores normal)
+      let machineStatus = (machine.status || '').toLowerCase();
+      let filterStatus = (filters.status || '').toLowerCase();
+      
+      // Normalize unsatisfactory/unacceptable naming
+      if (machineStatus === 'unsatisfactory') machineStatus = 'unacceptable';
+      if (filterStatus === 'unsatisfactory') filterStatus = 'unacceptable';
+      
+      if (filters.areaId && filters.areaId !== 'All' && machine.areaId !== filters.areaId) return false;
+      if (filters.status && filters.status !== 'All' && machineStatus !== filterStatus) return false;
+      if (filters.customerId && filters.customerId !== 'All' && machine.customerId !== filters.customerId) return false;
+      if (filters.fromDate && machine.date && machine.date < filters.fromDate) return false;
+      if (filters.toDate && machine.date && machine.date > filters.toDate) return false;
       return true;
     });
   }, [data, filters]);
@@ -204,24 +216,11 @@ ${selectedMachine.status === 'unacceptable' ? '• IMMEDIATE inspection required
               <span>Select a machine to download report</span>
             </div>
           )}
-          <button 
-            className={`report-btn ${!selectedMachine ? 'report-btn-disabled' : ''}`}
-            onClick={selectedMachine ? generateReport : undefined}
-            disabled={!selectedMachine || generatingReport}
-            title={!selectedMachine ? 'Select a machine first' : 'Download report for selected machine'}
-          >
-            {generatingReport ? (
-              <>
-                <Loader2 size={16} className="spinning" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Download size={16} />
-                Download Report
-              </>
-            )}
-          </button>
+          <ReportGenerator 
+            machine={selectedMachine}
+            onGenerateStart={() => setGeneratingReport(true)}
+            onGenerateEnd={() => setGeneratingReport(false)}
+          />
         </div>
       </div>
 

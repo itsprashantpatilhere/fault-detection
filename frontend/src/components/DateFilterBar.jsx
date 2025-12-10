@@ -1,25 +1,53 @@
-import { useState } from 'react';
-import { Calendar, Filter, RefreshCw } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Calendar, Filter, RefreshCw, Users } from 'lucide-react';
 import './DateFilterBar.css';
 
-const DateFilterBar = ({ onApplyFilter }) => {
-  const [fromDate, setFromDate] = useState('2025-12-01');
-  const [toDate, setToDate] = useState('2025-12-09');
-  const [status, setStatus] = useState('All');
+// Get default dates
+const getDefaultDates = () => {
+  const today = new Date().toISOString().split('T')[0];
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return { today, weekAgo };
+};
+
+const DateFilterBar = ({ 
+  onApplyFilter,
+  statusOptions = ['All', 'Normal', 'Satisfactory', 'Alert', 'Unsatisfactory'],
+  customerOptions = ['All'],
+  initialFilters = {}
+}) => {
+  const { today, weekAgo } = getDefaultDates();
+  
+  const [fromDate, setFromDate] = useState(initialFilters.fromDate || weekAgo);
+  const [toDate, setToDate] = useState(initialFilters.toDate || today);
+  const [status, setStatus] = useState(initialFilters.status || 'All');
+  const [customerId, setCustomerId] = useState(initialFilters.customerId || 'All');
+
+  // Update local state when initialFilters change
+  useEffect(() => {
+    if (initialFilters.fromDate) setFromDate(initialFilters.fromDate);
+    if (initialFilters.toDate) setToDate(initialFilters.toDate);
+    if (initialFilters.status) setStatus(initialFilters.status);
+    if (initialFilters.customerId) setCustomerId(initialFilters.customerId);
+  }, [initialFilters]);
 
   const handleApply = () => {
-    const filters = { fromDate, toDate, status };
-    console.log('Applying filters:', filters);
+    const filters = { fromDate, toDate, status, customerId };
+    console.log('Applying dashboard filters:', filters);
     if (onApplyFilter) {
       onApplyFilter(filters);
     }
   };
 
   const handleReset = () => {
-    setFromDate('2025-12-01');
-    setToDate('2025-12-09');
+    const { today, weekAgo } = getDefaultDates();
+    setFromDate(weekAgo);
+    setToDate(today);
     setStatus('All');
+    setCustomerId('All');
     console.log('Filters reset');
+    if (onApplyFilter) {
+      onApplyFilter({ fromDate: weekAgo, toDate: today, status: 'All', customerId: 'All' });
+    }
   };
 
   return (
@@ -65,11 +93,26 @@ const DateFilterBar = ({ onApplyFilter }) => {
             onChange={(e) => setStatus(e.target.value)}
             className="filter-select"
           >
-            <option value="All">All Statuses</option>
-            <option value="normal">Normal</option>
-            <option value="satisfactory">Satisfactory</option>
-            <option value="alert">Alert</option>
-            <option value="unacceptable">Unacceptable</option>
+            {statusOptions.map(s => (
+              <option key={s} value={s}>
+                {s === 'All' ? 'All Statuses' : s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-group">
+          <label className="filter-label">Customer</label>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            className="filter-select"
+          >
+            {customerOptions.map(c => (
+              <option key={c} value={c}>
+                {c === 'All' ? 'All Customers' : (c.length > 20 ? c.substring(0, 20) + '...' : c)}
+              </option>
+            ))}
           </select>
         </div>
 

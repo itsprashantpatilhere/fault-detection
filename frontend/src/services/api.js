@@ -32,6 +32,43 @@ const fetchApi = async (endpoint, options = {}) => {
 };
 
 // ==========================================
+// SYNC API - Keep data updated from external API
+// ==========================================
+
+export const triggerAutoSync = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/sync/auto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return await response.json();
+  } catch (error) {
+    console.warn('[API] Auto-sync failed (non-blocking):', error.message);
+    return { needs_sync: false, message: 'Sync unavailable' };
+  }
+};
+
+export const getSyncStatus = async () => {
+  return fetchApi('/sync/status');
+};
+
+export const syncToday = async () => {
+  const response = await fetch(`${API_BASE_URL}/sync/today`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return await response.json();
+};
+
+export const syncRecent = async (days = 7) => {
+  const response = await fetch(`${API_BASE_URL}/sync/recent?days=${days}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return await response.json();
+};
+
+// ==========================================
 // MACHINES API - Main endpoint for machine data
 // Backend: GET/POST /machines
 // ==========================================

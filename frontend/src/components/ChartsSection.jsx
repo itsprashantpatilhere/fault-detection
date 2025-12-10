@@ -63,7 +63,8 @@ const ChartsSection = ({
   customerTrendData = [], 
   statusTrendData = [],
   loading = { customerTrend: false, statusTrend: false },
-  errors = { customerTrend: null, statusTrend: null }
+  errors = { customerTrend: null, statusTrend: null },
+  onBarClick = null  // Handler for when a bar is clicked
 }) => {
   const statusColors = {
     normal: '#10b981',
@@ -175,7 +176,7 @@ const ChartsSection = ({
             <TrendingUp size={20} className="chart-icon" />
             <div>
               <h3>Machine Status Trends</h3>
-              <p>Status distribution over time</p>
+              <p>Status distribution over time {onBarClick && <span className="click-hint">(Click bars to view details)</span>}</p>
             </div>
           </div>
         </div>
@@ -210,18 +211,39 @@ const ChartsSection = ({
                 stackId="status" 
                 fill={statusColors.normal} 
                 radius={[0, 0, 0, 0]}
+                cursor={onBarClick ? 'pointer' : 'default'}
+                onClick={(data, index, event) => {
+                  if (onBarClick && data && data.date) {
+                    console.log('Bar clicked - Normal:', data);
+                    onBarClick(data.date, 'Normal');
+                  }
+                }}
               />
               <Bar 
                 dataKey="satisfactory" 
                 name="Satisfactory"
                 stackId="status" 
-                fill={statusColors.satisfactory} 
+                fill={statusColors.satisfactory}
+                cursor={onBarClick ? 'pointer' : 'default'}
+                onClick={(data, index, event) => {
+                  if (onBarClick && data && data.date) {
+                    console.log('Bar clicked - Satisfactory:', data);
+                    onBarClick(data.date, 'Satisfactory');
+                  }
+                }}
               />
               <Bar 
                 dataKey="alert" 
                 name="Alert"
                 stackId="status" 
-                fill={statusColors.alert} 
+                fill={statusColors.alert}
+                cursor={onBarClick ? 'pointer' : 'default'}
+                onClick={(data, index, event) => {
+                  if (onBarClick && data && data.date) {
+                    console.log('Bar clicked - Alert:', data);
+                    onBarClick(data.date, 'Alert');
+                  }
+                }}
               />
               <Bar 
                 dataKey="unacceptable" 
@@ -229,6 +251,13 @@ const ChartsSection = ({
                 stackId="status" 
                 fill={statusColors.unacceptable} 
                 radius={[4, 4, 0, 0]}
+                cursor={onBarClick ? 'pointer' : 'default'}
+                onClick={(data, index, event) => {
+                  if (onBarClick && data && data.date) {
+                    console.log('Bar clicked - Unacceptable:', data);
+                    onBarClick(data.date, 'Unacceptable');
+                  }
+                }}
               />
             </BarChart>
           </ResponsiveContainer>

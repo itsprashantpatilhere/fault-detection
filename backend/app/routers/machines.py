@@ -6,6 +6,17 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, date as dt
 
+# Support both absolute and relative imports
+try:
+    from app.database import get_database
+except ImportError:
+    try:
+        from database import get_database
+    except ImportError:
+        # Fallback if database not available
+        def get_database():
+            return None
+
 router = APIRouter()
 
 # ------------------- External API URLs -------------------
@@ -118,6 +129,82 @@ class BearingDataRequest(BaseModel):
     data_type: Optional[str] = "OFFLINE"
     analytics_type: Optional[str] = "MF"
 
+
+# ------------------- Helper: Fetch from MongoDB -------------------
+async def fetch_machines_from_mongodb(date_list: List[str], filters: dict) -> List[dict]:
+    """
+    Fetch machines from MongoDB for given dates with optional filters.
+    Returns empty list if MongoDB is not available or has no data.
+    """
+    try:
+        db = get_database()
+        if db is None:
+            return []
+        
+        machines_collection = db.machines
+        
+        # Build MongoDB query
+        query = {"date": {"$in": date_list}}
+        
+        # Add filters
+        if filters.get("customerId"):
+            query["customerId"] = {"$regex": f"^{filters['customerId']}$", "$options": "i"}
+        if filters.get("areaId"):
+            query["areaId"] = {"$regex": f"^{filters['areaId']}$", "$options": "i"}
+        if filters.get("subAreaId"):
+            query["subAreaId"] = {"$regex": f"^{filters['subAreaId']}$", "$options": "i"}
+        if filters.get("machineType"):
+            query["machineType"] = {"$regex": f"^{filters['machineType']}$", "$options": "i"}
+        if filters.get("statusId"):
+            query["statusId"] = {"$regex": f"^{filters['statusId']}$", "$options": "i"}
+        if filters.get("technologyId"):
+            query["technologyId"] = {"$regex": f"^{filters['technologyId']}$", "$options": "i"}
+        if filters.get("name"):
+            query["name"] = {"$regex": f"^{filters['name']}$", "$options": "i"}
+        
+        # Handle status/statusName filter
+        status_filter = filters.get("statusName") or filters.get("status")
+        if status_filter:
+            # Normalize unsatisfactory/unacceptable
+            status_variations = [status_filter]
+            if status_filter.lower() == 'unsatisfactory':
+                status_variations.append('Unacceptable')
+            elif status_filter.lower() == 'unacceptable':
+                status_variations.append('Unsatisfactory')
+            
+            status_regex = '|'.join([f"^{s}$" for s in status_variations])
+            query["$or"] = [
+                {"status": {"$regex": status_regex, "$options": "i"}},
+                {"statusName": {"$regex": status_regex, "$options": "i"}}
+            ]
+        
+        # Execute query
+        cursor = machines_collection.find(query)
+        machines = await cursor.to_list(length=None)
+        
+        logging.info(f"📦 Fetched {len(machines)} machines from MongoDB for dates: {date_list[:3]}...")
+        
+        return machines
+        
+    except Exception as e:
+        logging.warning(f"MongoDB fetch failed: {e}")
+        return []
+
+
+async def check_mongodb_has_data(date_list: List[str]) -> bool:
+    """Check if MongoDB has data for the given dates"""
+    try:
+        db = get_database()
+        if db is None:
+            return False
+        
+        machines_collection = db.machines
+        count = await machines_collection.count_documents({"date": {"$in": date_list}})
+        return count > 0
+    except Exception:
+        return False
+
+
 # ------------------- 1️⃣ Machines (GET + POST) -------------------
 @router.get("/machines")
 @router.post("/machines")
@@ -134,7 +221,8 @@ async def get_machines(
     statusName: Optional[str] = Query(None),
     status: Optional[str] = Query(None),  # 👈 added
     technologyId: Optional[str] = Query(None),
-    name: Optional[str] = Query(None)
+    name: Optional[str] = Query(None),
+    source: Optional[str] = Query(None, description="Data source: 'db' for MongoDB only, 'api' for external API only, default tries DB first")
 ):
     try:
         # ---------------- Determine date(s) ----------------
@@ -150,110 +238,135 @@ async def get_machines(
 
         date_list = generate_dates(req_date)
         all_machines = []
+        data_source = "api"  # Track where data came from
 
-        # ---------------- Fetch from external API in parallel ----------------
-        async def fetch_machines_for_date(date_str):
-            """Fetch machines for a single date"""
-            try:
-                # Use shared client for better performance
-                client = get_http_client()
-                payload = {"date": date_str}
-                response = await client.post(MACHINE_URL, headers=HEADERS, json=payload)
-                
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        # Handle list response
-                        if isinstance(data, list):
-                            return data
-                        # Handle dict response with machines array
-                        if isinstance(data, dict):
-                            if "machines" in data:
-                                return data.get("machines", [])
-                            if "data" in data and isinstance(data.get("data"), list):
-                                return data.get("data", [])
-                        return []
-                    except Exception:
-                        return []
-                else:
-                    # Non-200 status code
-                    return []
-            except Exception:
-                # Return empty list on error to not break other parallel requests
-                return []
-        
-        # Fetch all dates in parallel instead of sequentially
-        if len(date_list) > 1:
-            # Use parallel requests for multiple dates
-            try:
-                tasks = [fetch_machines_for_date(d) for d in date_list]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for result in results:
-                    if isinstance(result, list):
-                        all_machines.extend(result)
-                    elif isinstance(result, Exception):
-                        # Continue on individual failures
-                        pass
-            except Exception:
-                # Fallback to sequential if parallel fails
-                for d in date_list:
-                    result = await fetch_machines_for_date(d)
-                    if isinstance(result, list):
-                        all_machines.extend(result)
-        else:
-            # Single date - sequential request
-            result = await fetch_machines_for_date(date_list[0])
-            if isinstance(result, list):
-                all_machines.extend(result)
-
-        # ---------------- Apply Filters (optimized single pass) ----------------
-        # If status is provided but statusName is not, use status for statusName filtering
-        effective_statusName = statusName or status
-        
+        # ---------------- Build filters dict ----------------
         filters = {
             "customerId": customerId,
             "areaId": areaId,
             "subAreaId": subAreaId,
             "machineType": machineType,
             "statusId": statusId,
-            "statusName": effective_statusName,
+            "statusName": statusName,
+            "status": status,
             "technologyId": technologyId,
             "name": name,
         }
 
-        # Apply all filters in a single pass for better performance
-        # Only filter if at least one filter has a non-empty value
-        has_filters = any(value for value in filters.values() if value)
-        
-        if has_filters:
-            filtered_machines = []
-            for m in all_machines:
-                # Check all filters
-                match = True
-                for key, value in filters.items():
-                    if value:  # Only check if filter has a value
-                        m_value = str(m.get(key, "")).lower()
-                        filter_value = str(value).lower()
-                        if m_value != filter_value:
-                            match = False
-                            break
-                
-                # Also check status/statusName fields if status filter is applied
-                if match and effective_statusName:
-                    m_status = str(m.get("status", "")).lower()
-                    m_statusName = str(m.get("statusName", "")).lower()
-                    status_lower = str(effective_statusName).lower()
-                    # Match if either status or statusName matches
-                    if m_status != status_lower and m_statusName != status_lower:
-                        match = False
-                
-                if match:
-                    filtered_machines.append(m)
-            
-            all_machines = filtered_machines
+        # ---------------- Try MongoDB First (unless source=api) ----------------
+        if source != "api":
+            mongodb_machines = await fetch_machines_from_mongodb(date_list, filters)
+            if mongodb_machines:
+                all_machines = mongodb_machines
+                data_source = "mongodb"
+                logging.info(f"✅ Using MongoDB data: {len(all_machines)} machines")
 
-        # ---------------- Optional: Filter by date range ----------------
-        if date_from and date_to:
+        # ---------------- Fallback to External API (if no MongoDB data or source=api) ----------------
+        if not all_machines and source != "db":
+            logging.info("📡 Fetching from external API...")
+            
+            async def fetch_machines_for_date(date_str):
+                """Fetch machines for a single date"""
+                try:
+                    # Use shared client for better performance
+                    client = get_http_client()
+                    payload = {"date": date_str}
+                    response = await client.post(MACHINE_URL, headers=HEADERS, json=payload)
+                    
+                    if response.status_code == 200:
+                        try:
+                            data = response.json()
+                            # Handle list response
+                            if isinstance(data, list):
+                                return data
+                            # Handle dict response with machines array
+                            if isinstance(data, dict):
+                                if "machines" in data:
+                                    return data.get("machines", [])
+                                if "data" in data and isinstance(data.get("data"), list):
+                                    return data.get("data", [])
+                            return []
+                        except Exception:
+                            return []
+                    else:
+                        # Non-200 status code
+                        return []
+                except Exception:
+                    # Return empty list on error to not break other parallel requests
+                    return []
+            
+            # Fetch all dates in parallel instead of sequentially
+            if len(date_list) > 1:
+                # Use parallel requests for multiple dates
+                try:
+                    tasks = [fetch_machines_for_date(d) for d in date_list]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    for result in results:
+                        if isinstance(result, list):
+                            all_machines.extend(result)
+                        elif isinstance(result, Exception):
+                            # Continue on individual failures
+                            pass
+                except Exception:
+                    # Fallback to sequential if parallel fails
+                    for d in date_list:
+                        result = await fetch_machines_for_date(d)
+                        if isinstance(result, list):
+                            all_machines.extend(result)
+            else:
+                # Single date - sequential request
+                result = await fetch_machines_for_date(date_list[0])
+                if isinstance(result, list):
+                    all_machines.extend(result)
+
+            # ---------------- Apply Filters (only for API data, MongoDB already filtered) ----------------
+            # If status is provided but statusName is not, use status for statusName filtering
+            effective_statusName = statusName or status
+            
+            api_filters = {
+                "customerId": customerId,
+                "areaId": areaId,
+                "subAreaId": subAreaId,
+                "machineType": machineType,
+                "statusId": statusId,
+                "statusName": effective_statusName,
+                "technologyId": technologyId,
+                "name": name,
+            }
+
+            # Apply all filters in a single pass for better performance
+            # Only filter if at least one filter has a non-empty value
+            has_filters = any(value for value in api_filters.values() if value)
+            
+            if has_filters:
+                filtered_machines = []
+                for m in all_machines:
+                    # Check all filters
+                    match = True
+                    for key, value in api_filters.items():
+                        if value:  # Only check if filter has a value
+                            m_value = str(m.get(key, "")).lower()
+                            filter_value = str(value).lower()
+                            if m_value != filter_value:
+                                match = False
+                                break
+                    
+                    # Also check status/statusName fields if status filter is applied
+                    if match and effective_statusName:
+                        m_status = str(m.get("status", "")).lower()
+                        m_statusName = str(m.get("statusName", "")).lower()
+                        status_lower = str(effective_statusName).lower()
+                        # Match if either status or statusName matches
+                        if m_status != status_lower and m_statusName != status_lower:
+                            match = False
+                    
+                    if match:
+                        filtered_machines.append(m)
+                
+                all_machines = filtered_machines
+
+        # ---------------- Optional: Filter by date range (for API data) ----------------
+        if date_from and date_to and data_source == "api":
             try:
                 # Parse start date (beginning of day)
                 start = datetime.strptime(date_from, "%Y-%m-%d")
@@ -317,7 +430,8 @@ async def get_machines(
         # Response
         return {
             "totalCount": len(machines_serialized),
-            "machines": machines_serialized
+            "machines": machines_serialized,
+            "source": data_source  # Indicates where data came from: 'mongodb' or 'api'
         }
 
     except Exception as e:

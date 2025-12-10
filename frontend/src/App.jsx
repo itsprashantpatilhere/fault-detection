@@ -20,13 +20,15 @@ import {
   calculateKpiFromMachines,
   extractFilterOptions,
   generateCustomerTrendData,
-  generateStatusTrendData
+  generateStatusTrendData,
+  triggerAutoSync
 } from './services/api';
 import './App.css';
 
 function App() {
   // Active page state (simple routing without React Router)
   const [activePage, setActivePage] = useState('dashboard');
+  const [syncStatus, setSyncStatus] = useState(null);
   
   // Loading states
   const [loading, setLoading] = useState({
@@ -55,7 +57,7 @@ function App() {
   
   // Filter options states
   const [areaOptions, setAreaOptions] = useState(defaultAreaOptions);
-  const [statusOptions, setStatusOptions] = useState(defaultStatusOptions);
+  const [statusOptions, setStatusOptions] = useState(['All', 'Normal', 'Satisfactory', 'Alert', 'Unsatisfactory']);
   const [customerOptions, setCustomerOptions] = useState(defaultCustomerOptions);
 
   // Get today's date for default filters
@@ -74,7 +76,9 @@ function App() {
   // Dashboard date filters
   const [dashboardFilters, setDashboardFilters] = useState({
     fromDate: weekAgo,
-    toDate: today
+    toDate: today,
+    status: 'All',
+    customerId: 'All'
   });
 
   // ==========================================
@@ -98,14 +102,16 @@ function App() {
     }));
 
     try {
-      // Fetch machines with date range
+      // Fetch machines with date range and filters
       const response = await fetchMachines({
         date_from: filters.fromDate,
-        date_to: filters.toDate
+        date_to: filters.toDate,
+        status: filters.status,
+        customerId: filters.customerId
       });
 
-      const machines = response.machines || [];
-      console.log(`[Dashboard] Fetched ${machines.length} machines`);
+      let machines = response.machines || [];
+      console.log(`[Dashboard] Fetched ${machines.length} machines from ${response.source || 'api'}`);
 
       // Calculate KPI from machines
       const kpi = calculateKpiFromMachines(machines);
@@ -147,17 +153,32 @@ function App() {
     setLoading(prev => ({ ...prev, machines: true }));
     setErrors(prev => ({ ...prev, machines: null }));
 
+    console.log('[fetchMachinesData] Called with filters:', filters);
+
     try {
-      const response = await fetchMachines({
+      // Build filter params - only include non-'All' values
+      const apiFilters = {
         date_from: filters.fromDate,
-        date_to: filters.toDate,
-        customerId: filters.customerId,
-        areaId: filters.areaId,
-        status: filters.status
-      });
+        date_to: filters.toDate
+      };
+      
+      // Only add filters if they are not 'All'
+      if (filters.customerId && filters.customerId !== 'All') {
+        apiFilters.customerId = filters.customerId;
+      }
+      if (filters.areaId && filters.areaId !== 'All') {
+        apiFilters.areaId = filters.areaId;
+      }
+      if (filters.status && filters.status !== 'All') {
+        apiFilters.status = filters.status;
+      }
+      
+      console.log('[fetchMachinesData] API filters:', apiFilters);
+      
+      const response = await fetchMachines(apiFilters);
 
       const machines = response.machines || [];
-      console.log(`[Machines] Fetched ${machines.length} machines`);
+      console.log(`[Machines] Fetched ${machines.length} machines from ${response.source || 'api'}`);
 
       // Transform machines data for the table
       const transformedData = machines.map((machine, index) => ({
@@ -192,6 +213,32 @@ function App() {
   // EFFECTS
   // ==========================================
 
+  // Auto-sync on initial load to keep data updated
+  useEffect(() => {
+    const performAutoSync = async () => {
+      console.log('[App] Triggering auto-sync to check for updates...');
+      const result = await triggerAutoSync();
+      console.log('[App] Auto-sync result:', result);
+      setSyncStatus(result);
+      
+      // If sync was triggered, refetch data after a short delay
+      if (result.needs_sync) {
+        console.log('[App] Sync in progress, will refresh data in 3 seconds...');
+        setTimeout(() => {
+          fetchDashboardData(dashboardFilters);
+          fetchMachinesData(machineFilters);
+        }, 3000);
+      }
+    };
+    
+    performAutoSync();
+    
+    // Also set up periodic sync check every 5 minutes
+    const syncInterval = setInterval(performAutoSync, 5 * 60 * 1000);
+    
+    return () => clearInterval(syncInterval);
+  }, []);
+
   // Initial data load
   useEffect(() => {
     fetchDashboardData(dashboardFilters);
@@ -214,12 +261,38 @@ function App() {
 
   // Handle machine filter changes
   const handleMachineFilterApply = (filters) => {
-    setMachineFilters(filters);
+    console.log('handleMachineFilterApply called with:', filters);
+    // Ensure 'All' values are passed correctly
+    const cleanFilters = {
+      areaId: filters.areaId || 'All',
+      status: filters.status || 'All',
+      customerId: filters.customerId || 'All',
+      fromDate: filters.fromDate,
+      toDate: filters.toDate
+    };
+    console.log('Setting machine filters:', cleanFilters);
+    setMachineFilters(cleanFilters);
   };
 
   // Handle dashboard date filter changes
   const handleDashboardFilterApply = (filters) => {
     setDashboardFilters(filters);
+  };
+
+  // Handle bar chart click - navigate to machines with specific date and status
+  const handleBarChartClick = (date, status) => {
+    console.log('Bar clicked:', date, status);
+    // Set machine filters with the clicked date and status
+    const newFilters = {
+      areaId: 'All',
+      customerId: 'All',
+      status: status,
+      fromDate: date,
+      toDate: date
+    };
+    setMachineFilters(newFilters);
+    // Navigate to machines page
+    setActivePage('machines');
   };
 
   return (
@@ -231,7 +304,12 @@ function App() {
           title="Dashboard Overview" 
           subtitle="Real-time factory monitoring and machine health analytics"
         >
-          <DateFilterBar onApplyFilter={handleDashboardFilterApply} />
+          <DateFilterBar 
+            onApplyFilter={handleDashboardFilterApply}
+            statusOptions={statusOptions}
+            customerOptions={customerOptions}
+            initialFilters={dashboardFilters}
+          />
           <KpiCardsRow 
             data={kpiData} 
             loading={loading.kpi} 
@@ -248,6 +326,7 @@ function App() {
               customerTrend: errors.customerTrend,
               statusTrend: errors.statusTrend
             }}
+            onBarClick={handleBarChartClick}
           />
         </PageContainer>
       )}
@@ -262,6 +341,7 @@ function App() {
             areaOptions={areaOptions}
             statusOptions={statusOptions}
             customerOptions={customerOptions}
+            initialFilters={machineFilters}
           />
           <MachinesTable 
             data={machinesData} 

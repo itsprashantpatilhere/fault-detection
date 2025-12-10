@@ -1,20 +1,44 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Filter, RefreshCw, MapPin, Users, Activity } from 'lucide-react';
 import './MachineFilterBar.css';
+
+// Get default dates
+const getDefaultDates = () => {
+  const today = new Date().toISOString().split('T')[0];
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return { today, weekAgo };
+};
 
 const MachineFilterBar = ({ 
   onApplyFilter,
   areaOptions = ['All'],
-  statusOptions = ['All'],
-  customerOptions = ['All']
+  statusOptions = ['All', 'Normal', 'Satisfactory', 'Alert', 'Unsatisfactory'],
+  customerOptions = ['All'],
+  initialFilters = {}
 }) => {
+  const { today, weekAgo } = getDefaultDates();
+  
   const [filters, setFilters] = useState({
-    areaId: 'All',
-    status: 'All',
-    customerId: 'All',
-    fromDate: '2025-12-01',
-    toDate: '2025-12-09'
+    areaId: initialFilters.areaId || 'All',
+    status: initialFilters.status || 'All',
+    customerId: initialFilters.customerId || 'All',
+    fromDate: initialFilters.fromDate || weekAgo,
+    toDate: initialFilters.toDate || today
   });
+
+  // Update local state when initialFilters change (e.g., from bar chart click)
+  useEffect(() => {
+    if (Object.keys(initialFilters).length > 0) {
+      const newFilters = {
+        areaId: initialFilters.areaId || 'All',
+        status: initialFilters.status || 'All',
+        customerId: initialFilters.customerId || 'All',
+        fromDate: initialFilters.fromDate || weekAgo,
+        toDate: initialFilters.toDate || today
+      };
+      setFilters(newFilters);
+    }
+  }, [initialFilters.areaId, initialFilters.status, initialFilters.customerId, initialFilters.fromDate, initialFilters.toDate]);
 
   const handleChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -28,12 +52,13 @@ const MachineFilterBar = ({
   };
 
   const handleReset = () => {
+    const { today, weekAgo } = getDefaultDates();
     const resetFilters = {
       areaId: 'All',
       status: 'All',
       customerId: 'All',
-      fromDate: '2025-12-01',
-      toDate: '2025-12-09'
+      fromDate: weekAgo,
+      toDate: today
     };
     setFilters(resetFilters);
     console.log('Filters reset');
@@ -99,7 +124,7 @@ const MachineFilterBar = ({
             >
               {customerOptions.map(customer => (
                 <option key={customer} value={customer}>
-                  {customer === 'All' ? 'All Customers' : customer}
+                  {customer === 'All' ? 'All Customers' : (customer.length > 20 ? customer.substring(0, 20) + '...' : customer)}
                 </option>
               ))}
             </select>
