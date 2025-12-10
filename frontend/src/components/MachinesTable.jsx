@@ -57,30 +57,47 @@ const MachinesTable = ({ data = [], filters, loading = false, error = null, onMa
       if (filters.fromDate && machine.date && machine.date < filters.fromDate) return false;
       if (filters.toDate && machine.date && machine.date > filters.toDate) return false;
       
-      // Search filter - search by selected field
+      // Search filter - search by selected field or auto-detect
       if (filters.searchQuery && filters.searchQuery.trim() !== '') {
         const query = filters.searchQuery.toLowerCase().trim();
         const searchField = filters.searchField || 'machineName';
         
-        let fieldValue = '';
-        switch (searchField) {
-          case 'machineName':
-            fieldValue = (machine.machineName || '').toLowerCase();
-            break;
-          case 'machineId':
-            fieldValue = (machine.machineId || '').toLowerCase();
-            break;
-          case 'customerId':
-            fieldValue = (machine.customerId || '').toLowerCase();
-            break;
-          case 'areaId':
-            fieldValue = (machine.areaId || '').toLowerCase();
-            break;
-          default:
-            fieldValue = (machine.machineName || '').toLowerCase();
+        // Auto-detect: search across all fields
+        if (searchField === 'autoDetect') {
+          const machineName = (machine.machineName || '').toLowerCase();
+          const machineId = (machine.machineId || '').toLowerCase();
+          const customerId = (machine.customerId || '').toLowerCase();
+          const areaId = (machine.areaId || '').toLowerCase();
+          
+          // Match if query found in any field
+          if (!machineName.includes(query) && 
+              !machineId.includes(query) && 
+              !customerId.includes(query) && 
+              !areaId.includes(query)) {
+            return false;
+          }
+        } else {
+          // Search specific field
+          let fieldValue = '';
+          switch (searchField) {
+            case 'machineName':
+              fieldValue = (machine.machineName || '').toLowerCase();
+              break;
+            case 'machineId':
+              fieldValue = (machine.machineId || '').toLowerCase();
+              break;
+            case 'customerId':
+              fieldValue = (machine.customerId || '').toLowerCase();
+              break;
+            case 'areaId':
+              fieldValue = (machine.areaId || '').toLowerCase();
+              break;
+            default:
+              fieldValue = (machine.machineName || '').toLowerCase();
+          }
+          
+          if (!fieldValue.includes(query)) return false;
         }
-        
-        if (!fieldValue.includes(query)) return false;
       }
       
       return true;

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Calendar, Filter, RefreshCw, MapPin, Users, Activity, Search, Cpu, Hash } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Calendar, Filter, RefreshCw, MapPin, Users, Activity, Search, Cpu, Hash, Sparkles } from 'lucide-react';
 import './MachineFilterBar.css';
 
 // Get default dates
@@ -9,8 +9,9 @@ const getDefaultDates = () => {
   return { today, weekAgo };
 };
 
-// Search field options
+// Search field options - added Auto Detect
 const SEARCH_FIELDS = [
+  { value: 'autoDetect', label: 'Auto Detect', icon: Sparkles },
   { value: 'machineName', label: 'Machine Name', icon: Cpu },
   { value: 'machineId', label: 'Machine ID', icon: Hash },
   { value: 'customerId', label: 'Customer ID', icon: Users },
@@ -23,9 +24,13 @@ const MachineFilterBar = ({
   statusOptions = ['All', 'Normal', 'Satisfactory', 'Alert', 'Unsatisfactory'],
   customerOptions = ['All'],
   initialFilters = {},
-  onSearch
+  onSearch,
+  machinesData = [] // Pass all machines data for autocomplete
 }) => {
   const { today, weekAgo } = getDefaultDates();
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [detectedType, setDetectedType] = useState(null);
+  const searchContainerRef = useRef(null);
   
   const [filters, setFilters] = useState({
     areaId: initialFilters.areaId || 'All',
@@ -60,6 +65,121 @@ const MachineFilterBar = ({
     }
   }, [initialFilters.areaId, initialFilters.status, initialFilters.customerId, initialFilters.fromDate, initialFilters.toDate, initialFilters.searchField, initialFilters.searchQuery]);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Auto-detect field type based on query
+  const detectFieldType = (query) => {
+    if (!query || !machinesData.length) return null;
+    
+    const q = query.toLowerCase();
+    
+    // Check which fields have matches
+    const matches = {
+      machineName: machinesData.some(m => (m.machineName || '').toLowerCase().includes(q)),
+      machineId: machinesData.some(m => (m.machineId || '').toLowerCase().includes(q)),
+      customerId: machinesData.some(m => (m.customerId || '').toLowerCase().includes(q)),
+      areaId: machinesData.some(m => (m.areaId || '').toLowerCase().includes(q))
+    };
+    
+    // Find the first matching field, prioritize ID fields for ID-like queries
+    const matchingFields = Object.entries(matches).filter(([_, hasMatch]) => hasMatch).map(([field]) => field);
+    
+    if (matchingFields.length === 1) {
+      return matchingFields[0];
+    }
+    
+    // If multiple matches, try to guess by pattern
+    // If it looks like an ID (contains numbers/special chars), prefer ID fields
+    if (/^[a-f0-9]{20,}$/i.test(q)) {
+      // MongoDB ObjectId pattern
+      if (matches.machineId) return 'machineId';
+      if (matches.customerId) return 'customerId';
+    }
+    
+    return matchingFields[0] || null;
+  };
+
+  // Generate autocomplete suggestions
+  const suggestions = useMemo(() => {
+    if (!searchQuery || searchQuery.length < 1 || !machinesData.length) {
+      return [];
+    }
+    
+    const query = searchQuery.toLowerCase();
+    const results = [];
+    const seen = new Set();
+    
+    if (searchField === 'autoDetect') {
+      // Search all fields and group by type
+      const fieldTypes = ['machineName', 'machineId', 'customerId', 'areaId'];
+      
+      fieldTypes.forEach(field => {
+        machinesData.forEach(machine => {
+          const value = machine[field] || '';
+          if (value && value.toLowerCase().startsWith(query) && !seen.has(`${field}:${value}`)) {
+            seen.add(`${field}:${value}`);
+            results.push({
+              value,
+              field,
+              fieldLabel: SEARCH_FIELDS.find(f => f.value === field)?.label || field,
+              icon: SEARCH_FIELDS.find(f => f.value === field)?.icon || Search,
+              machine
+            });
+          }
+        });
+      });
+      
+      // Sort by field type, then alphabetically
+      results.sort((a, b) => {
+        const fieldOrder = { machineName: 0, machineId: 1, customerId: 2, areaId: 3 };
+        if (fieldOrder[a.field] !== fieldOrder[b.field]) {
+          return fieldOrder[a.field] - fieldOrder[b.field];
+        }
+        return a.value.localeCompare(b.value);
+      });
+    } else {
+      // Search only the selected field
+      machinesData.forEach(machine => {
+        const value = machine[searchField] || '';
+        if (value && value.toLowerCase().startsWith(query) && !seen.has(value)) {
+          seen.add(value);
+          results.push({
+            value,
+            field: searchField,
+            fieldLabel: SEARCH_FIELDS.find(f => f.value === searchField)?.label || searchField,
+            icon: SEARCH_FIELDS.find(f => f.value === searchField)?.icon || Search,
+            machine
+          });
+        }
+      });
+      
+      // Sort alphabetically
+      results.sort((a, b) => a.value.localeCompare(b.value));
+    }
+    
+    // Limit to 10 suggestions
+    return results.slice(0, 10);
+  }, [searchQuery, searchField, machinesData]);
+
+  // Update detected type when query changes in auto-detect mode
+  useEffect(() => {
+    if (searchField === 'autoDetect' && searchQuery) {
+      const detected = detectFieldType(searchQuery);
+      setDetectedType(detected);
+    } else {
+      setDetectedType(null);
+    }
+  }, [searchQuery, searchField, machinesData]);
+
   const handleChange = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
@@ -73,14 +193,42 @@ const MachineFilterBar = ({
 
   const handleSearch = () => {
     console.log('Searching:', searchField, searchQuery);
+    setShowSuggestions(false);
+    
+    // For auto-detect, use the detected field type
+    const effectiveField = searchField === 'autoDetect' ? (detectedType || 'autoDetect') : searchField;
+    
     if (onApplyFilter) {
-      onApplyFilter({ ...filters, searchField, searchQuery });
+      onApplyFilter({ ...filters, searchField: effectiveField, searchQuery });
     }
   };
 
   const handleSearchKeyPress = (e) => {
     if (e.key === 'Enter') {
       handleSearch();
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSearchInputChange = (e) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    setShowSuggestions(value.length > 0);
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    setSearchQuery(suggestion.value);
+    setShowSuggestions(false);
+    
+    // If auto-detect, switch to the detected field type
+    if (searchField === 'autoDetect') {
+      setSearchField(suggestion.field);
+    }
+    
+    // Apply the search immediately
+    if (onApplyFilter) {
+      onApplyFilter({ ...filters, searchField: suggestion.field, searchQuery: suggestion.value });
     }
   };
 
@@ -95,10 +243,12 @@ const MachineFilterBar = ({
     };
     setFilters(resetFilters);
     setSearchQuery('');
-    setSearchField('machineName');
+    setSearchField('autoDetect');
+    setShowSuggestions(false);
+    setDetectedType(null);
     console.log('Filters reset');
     if (onApplyFilter) {
-      onApplyFilter({ ...resetFilters, searchField: 'machineName', searchQuery: '' });
+      onApplyFilter({ ...resetFilters, searchField: 'autoDetect', searchQuery: '' });
     }
   };
 
@@ -116,11 +266,14 @@ const MachineFilterBar = ({
       <div className="filter-bar-content">
         {/* Search Bar Row */}
         <div className="search-row">
-          <div className="search-container">
+          <div className="search-container" ref={searchContainerRef}>
             <div className="search-field-selector">
               <select
                 value={searchField}
-                onChange={(e) => setSearchField(e.target.value)}
+                onChange={(e) => {
+                  setSearchField(e.target.value);
+                  setShowSuggestions(searchQuery.length > 0);
+                }}
                 className="search-field-select"
               >
                 {SEARCH_FIELDS.map(field => (
@@ -130,28 +283,65 @@ const MachineFilterBar = ({
                 ))}
               </select>
             </div>
-            <div className="search-input-wrapper">
-              <SelectedIcon size={16} className="search-icon" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={handleSearchKeyPress}
-                placeholder={`Search by ${SEARCH_FIELDS.find(f => f.value === searchField)?.label || 'field'}...`}
-                className="search-input"
-              />
-              {searchQuery && (
-                <button 
-                  className="search-clear-btn"
-                  onClick={() => {
-                    setSearchQuery('');
-                    if (onApplyFilter) {
-                      onApplyFilter({ ...filters, searchField, searchQuery: '' });
-                    }
-                  }}
-                >
-                  ×
-                </button>
+            <div className="search-input-container">
+              <div className="search-input-wrapper">
+                <SelectedIcon size={16} className="search-icon" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={handleSearchInputChange}
+                  onKeyDown={handleSearchKeyPress}
+                  onFocus={() => searchQuery.length > 0 && setShowSuggestions(true)}
+                  placeholder={searchField === 'autoDetect' 
+                    ? 'Type to search any field...' 
+                    : `Search by ${SEARCH_FIELDS.find(f => f.value === searchField)?.label || 'field'}...`}
+                  className="search-input"
+                />
+                {searchQuery && (
+                  <button 
+                    className="search-clear-btn"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setShowSuggestions(false);
+                      setDetectedType(null);
+                      if (onApplyFilter) {
+                        onApplyFilter({ ...filters, searchField, searchQuery: '' });
+                      }
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              
+              {/* Autocomplete Dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="search-suggestions-dropdown">
+                  {searchField === 'autoDetect' && detectedType && (
+                    <div className="suggestions-detected-type">
+                      <Sparkles size={12} />
+                      <span>Detected: {SEARCH_FIELDS.find(f => f.value === detectedType)?.label}</span>
+                    </div>
+                  )}
+                  {suggestions.map((suggestion, index) => {
+                    const SuggestionIcon = suggestion.icon;
+                    return (
+                      <div 
+                        key={`${suggestion.field}-${suggestion.value}-${index}`}
+                        className="suggestion-item"
+                        onClick={() => handleSuggestionClick(suggestion)}
+                      >
+                        <SuggestionIcon size={14} className="suggestion-icon" />
+                        <div className="suggestion-content">
+                          <span className="suggestion-value">{suggestion.value}</span>
+                          {searchField === 'autoDetect' && (
+                            <span className="suggestion-type">{suggestion.fieldLabel}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
             <button className="btn btn-primary search-btn" onClick={handleSearch}>

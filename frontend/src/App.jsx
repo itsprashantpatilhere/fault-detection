@@ -73,7 +73,7 @@ function App() {
     customerId: 'All',
     fromDate: weekAgo,
     toDate: today,
-    searchField: 'machineName',
+    searchField: 'autoDetect',
     searchQuery: ''
   });
 
@@ -356,6 +356,7 @@ function App() {
             statusOptions={statusOptions}
             customerOptions={customerOptions}
             initialFilters={machineFilters}
+            machinesData={machinesData}
           />
           <MachinesTable 
             data={machinesData} 
